@@ -28,6 +28,7 @@
 #
 
 import logging
+
 from . import epdconfig
 
 # Display resolution
@@ -43,10 +44,11 @@ logger = logging.getLogger(__name__)
 
 class EPD:
     def __init__(self):
-        self.reset_pin = epdconfig.RST_PIN
-        self.dc_pin = epdconfig.DC_PIN
-        self.busy_pin = epdconfig.BUSY_PIN
-        self.cs_pin = epdconfig.CS_PIN
+        self.config = epdconfig.OrangePiZero2W()
+        self.reset_pin = self.config.RST_PIN
+        self.dc_pin = self.config.DC_PIN
+        self.busy_pin = self.config.BUSY_PIN
+        self.cs_pin = self.config.CS_PIN
         self.width = EPD_WIDTH
         self.height = EPD_HEIGHT
         self.GRAY1  = GRAY1 #white
@@ -78,29 +80,39 @@ class EPD:
     
     # Hardware reset
     def reset(self):
-        epdconfig.digital_write(self.reset_pin, 1)
-        epdconfig.delay_ms(200) 
-        epdconfig.digital_write(self.reset_pin, 0)
-        epdconfig.delay_ms(2)
-        epdconfig.digital_write(self.reset_pin, 1)
-        epdconfig.delay_ms(200)   
+        self.config.digital_write(self.reset_pin, 1)
+        self.config.delay_ms(200) 
+        self.config.digital_write(self.reset_pin, 0)
+        self.config.delay_ms(2)
+        self.config.digital_write(self.reset_pin, 1)
+        self.config.delay_ms(200)   
 
     def send_command(self, command):
-        epdconfig.digital_write(self.dc_pin, 0)
-        epdconfig.digital_write(self.cs_pin, 0)
-        epdconfig.spi_writebyte([command])
-        epdconfig.digital_write(self.cs_pin, 1)
+        self.config.digital_write(self.dc_pin, 0)
+        self.config.digital_write(self.cs_pin, 0)
+        self.config.spi_writebyte(command)
+        self.config.digital_write(self.cs_pin, 1)
 
     def send_data(self, data):
-        epdconfig.digital_write(self.dc_pin, 1)
-        epdconfig.digital_write(self.cs_pin, 0)
-        epdconfig.spi_writebyte([data])
-        epdconfig.digital_write(self.cs_pin, 1)
+        max_chunk_size = 4096  # Maximum number of bytes to send in one SPI transaction
+        if isinstance(data, list):
+            for i in range(0, len(data), max_chunk_size):
+                chunk = data[i:i + max_chunk_size]
+                self.config.digital_write(self.dc_pin, 1)
+                self.config.digital_write(self.cs_pin, 0)
+                self.config.spi_writebytes(chunk)
+                self.config.digital_write(self.cs_pin, 1)
+        else:
+            self.config.digital_write(self.dc_pin, 1)
+            self.config.digital_write(self.cs_pin, 0)
+            self.config.spi_writebyte(data)
+            self.config.digital_write(self.cs_pin, 1)
+        
         
     def ReadBusy(self):        
         logger.debug("e-Paper busy")
-        while(epdconfig.digital_read(self.busy_pin) == 1):      #  1: idle, 0: busy
-            epdconfig.delay_ms(20)                
+        while(self.config.digital_read(self.busy_pin) == 1):      #  1: idle, 0: busy
+            self.config.delay_ms(20)                
         logger.debug("e-Paper busy release")
     
     def TurnOnDisplay(self):
@@ -129,11 +141,10 @@ class EPD:
         
     def Lut(self):
         self.send_command(0x32)
-        for i in range(159):
-            self.send_data(self.LUT_DATA_4Gray[i])
+        self.send_data(self.LUT_DATA_4Gray)
     
     def init(self):
-        if (epdconfig.module_init() != 0):
+        if (self.config.module_init() != 0):
             return -1
             
         # EPD hardware init start
@@ -158,7 +169,7 @@ class EPD:
         return 0
         
     def init_Fast(self):
-        if (epdconfig.module_init() != 0):
+        if (self.config.module_init() != 0):
             return -1
             
         # EPD hardware init start
@@ -203,7 +214,7 @@ class EPD:
         return 0
 
     def Init_4Gray(self):
-        if (epdconfig.module_init() != 0):
+        if (self.config.module_init() != 0):
             return -1
         self.reset()
         
@@ -325,195 +336,222 @@ class EPD:
         return buf
     
     def Clear(self):
-        if(self.width % 8 == 0):
+        if self.width % 8 == 0:
             Width = self.width // 8
         else:
-            Width = self.width // 8 +1
+            Width = self.width // 8 + 1
         Height = self.height
+
+        buffer = [0xFF] * (Width * Height)
         self.send_command(0x24)
-        for j in range(Height):
-            for i in range(Width):
-                self.send_data(0XFF)
+        self.send_data(buffer)
+        
         self.TurnOnDisplay()
+
     
     def display(self, image):
-        if(self.width % 8 == 0):
+        if self.width % 8 == 0:
             Width = self.width // 8
         else:
-            Width = self.width // 8 +1
+            Width = self.width // 8 + 1
         Height = self.height
+
+        buffer = []
         self.send_command(0x24)
         for j in range(Height):
             for i in range(Width):
-                self.send_data(image[i + j * Width])
+                buffer.append(image[i + j * Width])
+        self.send_data(buffer)
+        
         self.TurnOnDisplay()
+
         
     def display_Fast(self, image):
-        if(self.width % 8 == 0):
+        if self.width % 8 == 0:
             Width = self.width // 8
         else:
-            Width = self.width // 8 +1
+            Width = self.width // 8 + 1
         Height = self.height
+
+        buffer = []
         self.send_command(0x24)
         for j in range(Height):
             for i in range(Width):
-                self.send_data(image[i + j * Width])
+                buffer.append(image[i + j * Width])
+        self.send_data(buffer)
+        
         self.TurnOnDisplay_Fast()
+
         
     def display_Base(self, image):
-        if(self.width % 8 == 0):
+        if self.width % 8 == 0:
             Width = self.width // 8
         else:
-            Width = self.width // 8 +1
+            Width = self.width // 8 + 1
         Height = self.height
-        self.send_command(0x24)   #Write Black and White image to RAM
+
+        buffer = []
+        
+        self.send_command(0x24)  # Write Black and White image to RAM
         for j in range(Height):
             for i in range(Width):
-                self.send_data(image[i + j * Width])
-                
-        self.send_command(0x26)  #Write Black and White image to RAM
+                buffer.append(image[i + j * Width])
+        self.send_data(buffer)
+        
+        buffer = []
+        self.send_command(0x26)  # Write Black and White image to RAM
         for j in range(Height):
             for i in range(Width):
-                self.send_data(image[i + j * Width])
+                buffer.append(image[i + j * Width])
+        self.send_data(buffer)
+
         self.TurnOnDisplay()
+
         
     def display_Base_color(self, color):
-        if(self.width % 8 == 0):
+        if self.width % 8 == 0:
             Width = self.width // 8
         else:
-            Width = self.width // 8 +1
+            Width = self.width // 8 + 1
         Height = self.height
-        self.send_command(0x24)   #Write Black and White image to RAM
-        for j in range(Height):
-            for i in range(Width):
-                self.send_data(color)
-                
-        self.send_command(0x26)  #Write Black and White image to RAM
-        for j in range(Height):
-            for i in range(Width):
-                self.send_data(color)
-        # self.TurnOnDisplay()
-    
+        self.send_command(0x24)  # Write Black and White image to RAM
+
+        buffer = [color] * (Width * Height)
+        self.send_data(buffer)
+
+        self.send_command(0x26)  # Write Black and White image to RAM
+        self.send_data(buffer)
+
+        self.TurnOnDisplay()
+
+
     def display_Partial(self, Image, Xstart, Ystart, Xend, Yend):
-        if((Xstart % 8 + Xend % 8 == 8 & Xstart % 8 > Xend % 8) | Xstart % 8 + Xend % 8 == 0 | (Xend - Xstart)%8 == 0):
+        if (Xstart % 8 + Xend % 8 == 8 and Xstart % 8 > Xend % 8) or Xstart % 8 + Xend % 8 == 0 or (Xend - Xstart) % 8 == 0:
             Xstart = Xstart // 8
             Xend = Xend // 8
         else:
-            Xstart = Xstart // 8 
+            Xstart = Xstart // 8
             if Xend % 8 == 0:
                 Xend = Xend // 8
             else:
                 Xend = Xend // 8 + 1
-                
-        if(self.width % 8 == 0):
+
+        if self.width % 8 == 0:
             Width = self.width // 8
         else:
-            Width = self.width // 8 +1
+            Width = self.width // 8 + 1
         Height = self.height
 
         Xend -= 1
         Yend -= 1
-        
+
         # Reset
         self.reset()
 
-        self.send_command(0x3C) #BorderWavefrom
+        self.send_command(0x3C)  # BorderWavefrom
         self.send_data(0x80)
-	
-        self.send_command(0x44)       # set RAM x address start/end, in page 35
-        self.send_data(Xstart & 0xff)    # RAM x address start at 00h;
-        self.send_data(Xend & 0xff)    # RAM x address end at 0fh(15+1)*8->128 
-        self.send_command(0x45)       # set RAM y address start/end, in page 35
-        self.send_data(Ystart & 0xff)    # RAM y address start at 0127h;
-        self.send_data((Ystart>>8) & 0x01)    # RAM y address start at 0127h;
-        self.send_data(Yend & 0xff)    # RAM y address end at 00h;
-        self.send_data((Yend>>8) & 0x01)   
 
-        self.send_command(0x4E)   # set RAM x address count to 0;
+        self.send_command(0x44)  # set RAM x address start/end, in page 35
+        self.send_data([Xstart & 0xff, Xend & 0xff])
+        self.send_command(0x45)  # set RAM y address start/end, in page 35
+        self.send_data([Ystart & 0xff, (Ystart >> 8) & 0x01, Yend & 0xff, (Yend >> 8) & 0x01])
+
+        self.send_command(0x4E)  # set RAM x address count to 0;
         self.send_data(Xstart & 0xff)
-        self.send_command(0x4F)   # set RAM y address count to 0X127;    
-        self.send_data(Ystart & 0xff)
-        self.send_data((Ystart>>8) & 0x01)
+        self.send_command(0x4F)  # set RAM y address count to 0X127;
+        self.send_data([Ystart & 0xff, (Ystart >> 8) & 0x01])
 
-        self.send_command(0x24)   #Write Black and White image to RAM
+        buffer = []
         for j in range(Height):
             for i in range(Width):
-                if((j > Ystart-1) & (j < (Yend + 1)) & (i > Xstart-1) & (i < (Xend + 1))):
-                    self.send_data(Image[i + j * Width])
+                if (j > Ystart - 1) and (j < Yend + 1) and (i > Xstart - 1) and (i < Xend + 1):
+                    buffer.append(Image[i + j * Width])
+
+        self.send_data(buffer)
         self.TurnOnDisplay_Partial()
-  
+
+
     def display_4Gray(self, image):
-        self.send_command(0x24)
-        for i in range(0, 5808):                     #5808*4  46464
-            temp3=0
-            for j in range(0, 2):
-                temp1 = image[i*2+j]
-                for k in range(0, 2):
-                    temp2 = temp1&0xC0 
-                    if(temp2 == 0xC0):
-                        temp3 |= 0x00
-                    elif(temp2 == 0x00):
-                        temp3 |= 0x01  
-                    elif(temp2 == 0x80): 
-                        temp3 |= 0x01 
-                    else: #0x40
-                        temp3 |= 0x00 
-                    temp3 <<= 1	
-                    
-                    temp1 <<= 2
-                    temp2 = temp1&0xC0 
-                    if(temp2 == 0xC0): 
-                        temp3 |= 0x00
-                    elif(temp2 == 0x00): 
-                        temp3 |= 0x01
-                    elif(temp2 == 0x80):
-                        temp3 |= 0x01
-                    else :   #0x40
-                        temp3 |= 0x00	
-                    if(j!=1 or k!=1):				
-                        temp3 <<= 1
-                    temp1 <<= 2
-            self.send_data(temp3)
-            
-        self.send_command(0x26)	       
-        for i in range(0, 5808):                #5808*4  46464
-            temp3=0
-            for j in range(0, 2):
-                temp1 = image[i*2+j]
-                for k in range(0, 2):
-                    temp2 = temp1&0xC0 
-                    if(temp2 == 0xC0):
-                        temp3 |= 0x00
-                    elif(temp2 == 0x00):
-                        temp3 |= 0x01
-                    elif(temp2 == 0x80):
-                        temp3 |= 0x00
-                    else: #0x40
-                        temp3 |= 0x01 
-                    temp3 <<= 1	
-                    
-                    temp1 <<= 2
-                    temp2 = temp1&0xC0 
-                    if(temp2 == 0xC0): 
-                        temp3 |= 0x00
-                    elif(temp2 == 0x00): 
-                        temp3 |= 0x01
-                    elif(temp2 == 0x80):
-                        temp3 |= 0x00 
-                    else:    #0x40
-                            temp3 |= 0x01	
-                    if(j!=1 or k!=1):					
-                        temp3 <<= 1
-                    temp1 <<= 2
-            self.send_data(temp3)
+        buffer24 = []
+        buffer26 = []
         
+        for i in range(0, 5808):  # 5808*4  46464
+            temp3 = 0
+            for j in range(2):
+                temp1 = image[i * 2 + j]
+                for k in range(2):
+                    temp2 = temp1 & 0xC0
+                    if temp2 == 0xC0:
+                        temp3 |= 0x00
+                    elif temp2 == 0x00:
+                        temp3 |= 0x01
+                    elif temp2 == 0x80:
+                        temp3 |= 0x01
+                    else:  # 0x40
+                        temp3 |= 0x00
+                    temp3 <<= 1
+
+                    temp1 <<= 2
+                    temp2 = temp1 & 0xC0
+                    if temp2 == 0xC0:
+                        temp3 |= 0x00
+                    elif temp2 == 0x00:
+                        temp3 |= 0x01
+                    elif temp2 == 0x80:
+                        temp3 |= 0x01
+                    else:  # 0x40
+                        temp3 |= 0x00
+                    if j != 1 or k != 1:
+                        temp3 <<= 1
+                    temp1 <<= 2
+
+            buffer24.append(temp3)
+        
+        self.send_command(0x24)
+        self.send_data(buffer24)
+
+        for i in range(0, 5808):  # 5808*4  46464
+            temp3 = 0
+            for j in range(2):
+                temp1 = image[i * 2 + j]
+                for k in range(2):
+                    temp2 = temp1 & 0xC0
+                    if temp2 == 0xC0:
+                        temp3 |= 0x00
+                    elif temp2 == 0x00:
+                        temp3 |= 0x01
+                    elif temp2 == 0x80:
+                        temp3 |= 0x00
+                    else:  # 0x40
+                        temp3 |= 0x01
+                    temp3 <<= 1
+
+                    temp1 <<= 2
+                    temp2 = temp1 & 0xC0
+                    if temp2 == 0xC0:
+                        temp3 |= 0x00
+                    elif temp2 == 0x00:
+                        temp3 |= 0x01
+                    elif temp2 == 0x80:
+                        temp3 |= 0x00
+                    else:  # 0x40
+                        temp3 |= 0x01
+                    if j != 1 or k != 1:
+                        temp3 <<= 1
+                    temp1 <<= 2
+
+            buffer26.append(temp3)
+
+        self.send_command(0x26)
+        self.send_data(buffer26)
+
         self.TurnOnDisplay_4GRAY()
 
     def sleep(self):
         self.send_command(0X10)
         self.send_data(0x01)
         
-        epdconfig.delay_ms(2000)
-        epdconfig.module_exit()
+        self.config.delay_ms(2000)
+        self.config.module_exit()
 ### END OF FILE ###
 

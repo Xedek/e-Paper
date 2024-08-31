@@ -17,9 +17,13 @@ if os.path.exists(libdir):
 from waveshare_epd import epd2in7_V2
 from PIL import Image,ImageDraw,ImageFont,ImageEnhance
 
-isClearScreen = False
+isClearScreen = True
 client_id = "AtWDgu3GE74V2kmHDHCqRqII3bMp4GOj"
 client_secret = "qfb1hf1v3fBU74vHzvKYjR9H5YGxZCuOo5pFAxRZ6hlV9VLSzDQI27WTMkJbmt80"
+Keg1Overridepercent = -1
+Keg2Overridepercent = -1
+Keg3Overridepercent = -1
+Keg4Overridepercent = -1
 
 # Function to get OAuth token
 def get_oauth_token():
@@ -137,7 +141,15 @@ else:
     if auth_token:
         # Fetch keg percentages from Arduino Cloud
         percentages = get_keg_percentages(auth_token)
-
+        if Keg1Overridepercent >= 0:
+            percentages[0] = Keg1Overridepercent
+        if Keg2Overridepercent >= 0:
+            percentages[1] = Keg2Overridepercent
+        if Keg3Overridepercent >= 0:
+            percentages[2] = Keg3Overridepercent
+        if Keg4Overridepercent >= 0:
+            percentages[3] = Keg4Overridepercent
+            
         # Create a new blank image in landscape mode
         final_image = Image.new('L', (epd.height, epd.width), 255)  # White background, note the swap in dimensions
 
